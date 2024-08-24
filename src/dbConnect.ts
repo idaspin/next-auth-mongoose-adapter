@@ -1,28 +1,32 @@
-// This approach is taken from https://github.com/vercel/next.js/tree/canary/examples/with-mongodb
-import mongoose, {ConnectOptions, Mongoose} from "mongoose";
+import mongoose from "mongoose";
 
-// Check URI
-const uri = process.env.MONGODB_URI || "";
-if (!process.env.MONGODB_URI) {
-  throw new Error("Please add your Mongo URI to .env.local");
+declare global {
+    var mongoose: any; // This must be a `var` and not a `let / const`
 }
 
-// Create Connection
-let dbConnection: Promise<Mongoose>;
-const options: ConnectOptions = {};
+const MONGODB_URI = process.env.MONGODB_SERVER!;
 
-if (process.env.NODE_ENV === "development") {
-  // In development mode, use a global variable so that the value
-  // is preserved across module reloads caused by HMR (Hot Module Replacement).
-  if (!(global as any)._mongooseConnect) {
-    (global as any)._mongooseConnect = mongoose.connect(uri, options);
-  }
-  dbConnection = (global as any)._mongooseConnect;
-} else {
-  // In production mode, it's best to not use a global variable.
-  dbConnection = mongoose.connect(uri, options);
+if (!MONGODB_URI) throw new Error( "Please define the MONGODB_URI environment variable inside .env.local" );
+
+let cached = global.mongoose;
+
+if (!cached) cached = global.mongoose = { conn: null, promise: null };
+
+async function dbConnect() {
+    if (cached.conn) return cached.conn;
+    if (!cached.promise) {
+        const opts = {
+            bufferCommands: false,
+        };
+        cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => mongoose);
+    }
+    try {
+        cached.conn = await cached.promise;
+    } catch (e) {
+        cached.promise = null;
+        throw e;
+    }
+    return cached.conn;
 }
 
-// Export a module-scoped MongoClient promise. By doing this in a
-// separate module, the client can be shared across functions.
-export default dbConnection;
+export default dbConnect;
